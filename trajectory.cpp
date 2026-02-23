@@ -4,83 +4,112 @@
 
 using namespace std;
 
-#define SHOOTER_HEIGHT 0.5 // TODO: Feet per second
-#define HUB_HEIGHT 6 // Feet
+#define SHOOTER_HEIGHT 1.7891 // TODO: Feet
+#define HUB_HEIGHT 6.4 // Feet
+#define HUB_LENGTH 1.958335 // Feet
 #define GRAVITY 32.185 // Feet per second
 
 // Example maximums and minimums
-#define MAX_VELOCITY 33 
-#define MIN_VELOCITY 20
+#define MAX_VELOCITY 35
+#define MIN_VELOCITY 10
 #define MAX_ANGLE (M_PI / 2)
-#define MIN_ANGLE 0
+#define MIN_ANGLE (M_PI / 15)
 
 // For optimization
-#define ERROR_OFFSET 0.01
-#define MAX_ITERATIONS 200 // If it takes too long, stop it.
+#define STEP 0.1
+#define MAX_ITERATIONS 100
+#define ERR 0.1
+
+double get_sign(double val){
+    if (val > 0){
+        return 1.0;
+    }
+    else if (val < 0){
+        return -1.0;
+    }
+    else {
+        return 0;
+    }
+}
+
+bool bounds(double x, double low, double high){
+    if ((x >= low) && (x <= high)){
+        return true;
+    }
+    return false;
+}
 
 double trajectory(double distance, double initial_height, double angle, double velocity){
-    return initial_height + distance * tan(angle) - ((GRAVITY * distance * distance) / (2 * velocity * velocity * cos(angle) * cos(angle)));
+    return (initial_height + (distance * tan(angle)) - ((GRAVITY * distance * distance) / (2 * velocity * velocity * cos(angle) * cos(angle))));
 }
 
-double trajectory_derivative_angle(double distance, double initial_height, double angle, double velocity){
-    return (distance * sec(angle) * sec(angle)) - ((GRAVITY * 4 * sec(angle) * sec(angle) * tan(angle)) / (velocity * velocity));
+double derivative_angle(double distance, double initial_height, double angle, double velocity){
+    double h = 0.0000001;
+    return (trajectory(distance, initial_height, angle + h, velocity) - trajectory(distance, initial_height, angle - h, velocity)) / (2 * h);
 }
 
-double trajectory_derivative_velocity(double distance, double initial_height, double angle, double velocity){
-    return (-GRAVITY * distance * distance) / (-velocity * velocity * velocity * cos(angle) * cos(angle));
+double derivative_velocity(double distance, double initial_height, double angle, double velocity){
+    double h = 0.0000001;
+    return (trajectory(distance, initial_height, angle, velocity + h) - trajectory(distance, initial_height, angle, velocity - h)) / (2 * h);
 }
 
-double guess_velocity(double distance, double angle){
-    return (2 * GRAVITY * sqrt(tan(angle))) / (sqrt(distance));
-}
+double* optimize(double distance, double initial_height, double angle, double velocity){
+    double *step = new double[2];
+    double new_angle = angle;
+    double new_velocity = velocity;
+    double distance_diff;
+    double height_low, height_high;
 
-double guess_angle(double distance, double velocity){
-    return atan((distance * velocity * velocity) / (4 * GRAVITY * GRAVITY));
-}
-
-vector<double> optimize(double distance, double initial_height, double angle){
-    double velocity;
-    int iterations = 0;
     while (true){
-        velocity = guess_velocity(distance, angle);
-        vector<double> result = {angle, velocity};
-        if (iterations > MAX_ITERATIONS){
+        // Get the height_low (before the hub) and height_high (after the hub)
+        height_low = trajectory(distance - HUB_LENGTH, initial_height, new_angle, new_velocity);
+        height_high = trajectory(distance + HUB_LENGTH, initial_height, new_angle, new_velocity);
+        cout << "Angle: " << new_angle << "   Velocity: " << new_velocity << "   Height low: " << height_low << "   Height high: " << height_high << endl;
+        if (height_low > HUB_HEIGHT && height_high < HUB_HEIGHT){
+            step[0] = new_angle;
+            step[1] = new_velocity;
             break;
         }
-        double traj = trajectory(distance, initial_height, result[0], result[1]);
-        if ((velocity <= MAX_VELOCITY) && (velocity >= MIN_VELOCITY) && (traj > 6)){
-            result = {angle, velocity};
-            return result;
-        }
-        else if ((velocity < MAX_VELOCITY) || (traj <= 6)) {
-            angle = guess_angle(distance, velocity + ERROR_OFFSET);
-            iterations++;
-            continue;
-        }
-        else {
-            angle = guess_angle(distance, velocity - ERROR_OFFSET);
-            iterations++;
-            continue;
+
+        // Change the velocity based on the derivative (normalized)
+        new_velocity += get_sign(derivative_velocity(distance, initial_height, new_angle, new_velocity)) * STEP;
+        if ((new_velocity > MAX_VELOCITY)){
+            // If the velocity gets too big, reset it and step the angle up.
+            new_angle += get_sign(derivative_angle(distance, initial_height, new_angle, new_velocity)) * STEP;
+            new_velocity = MIN_VELOCITY;
         }
     }
 
-    vector<double> result = {-1, -1};
-    return result;
+    return step;
 }
 
 int main(){
     double robot_velocity = 0; // ft/s
-    double hub_distance = 12.5; // feet
-    double angle = M_PI / 3; // radians, example starting
-    double flywheel_velocity = 9; // ft/s, output
+    double hub_distance = 25; // feet
+    double angle = MIN_ANGLE; // radians, example starting
+    double velocity = MIN_VELOCITY; // ft/s, output
+    //double *result = new double[2];
 
-    // TODO: Optimizer will sometimes not find an answer when there is one
-    // Solution: Use an actual optimizer rather than the silliness I wrote
+    // TODO: Faster optimizer
 
     // TODO: Implement robot velocity into the velocity of the flywheel
-    
-    vector<double> result = optimize(hub_distance, SHOOTER_HEIGHT, angle);
-    cout << "Angle: " << result[0] << "   Velocity: " << result[1] << endl;
-    double traj = trajectory(hub_distance, SHOOTER_HEIGHT, result[0], result[1]);
-    cout << "Final Height: " << traj << endl;
+
+    //cout << trajectory(hub_distance, SHOOTER_HEIGHT, M_PI / 4, 10) << endl;
+    //cout << "Angle: " << angle << endl;
+    //cout << "Velocity: " << vel << endl;
+    //cout << "Distance at zero: " << traj_zero(SHOOTER_HEIGHT, angle, vel) << endl;
+
+    double* result = optimize(hub_distance, SHOOTER_HEIGHT, angle, velocity);
+    //double height = trajectory(distance_diff, initial_height, result[0], result[1]);
+    if ((result[0] < MIN_ANGLE) || (result[0] > MAX_ANGLE)){
+        cout << "Angle not found." << endl;
+    }
+    if ((result[1] < MIN_VELOCITY) || (result[1] > MAX_VELOCITY)){
+        cout << "Velocity not found." << endl;
+    }
+
+    cout << "Angle: " << result[0] << endl;
+    cout << "Velocity: " << result[1] << endl;
+
+    return 0;
 }
