@@ -152,14 +152,33 @@ int handle_scroll(int scroll_position, int position[2], bool up){
     return scroll_position;
 }
 
+char* substring(const char* input, int offset, int len, char* destination){
+    int in_len = strlen(input);
+
+    if ((offset + len) > in_len) return NULL;
+
+    strncpy(destination, input + offset, len);
+    destination[len + 1] = 0;
+
+    return destination;
+}
+
+void get_display(char* display, char* screen, int scroll_position){
+    int start_position[2] = {0, scroll_position};
+    int end_position[2] = {COLS - 1, LINES + scroll_position - 1};
+
+    int start_index = screen_to_real(screen, start_position);
+    int end_index = screen_to_real(screen, end_position);
+
+    display = substring(screen, start_index, end_index - start_index, display);
+}
+
 int main(){
     initscr();
     cbreak();
     noecho();
     keypad(stdscr, TRUE);
 
-    WINDOW *pad = newpad(LINE_LIMIT, COLS);
-    wrefresh(pad);
     int scroll_position = 0;
     // Position of the cursor
     int* position = malloc(2 * sizeof(int));
@@ -171,12 +190,14 @@ int main(){
 
     // Buffer to be written
     char* screen_buffer = malloc(FILE_LIMIT * sizeof(char));
+    char* display_buffer = malloc((COLS * LINES * sizeof(char)) + 1);
 
     while (true){
         int ch = getch();
 
+        memset(display_buffer, 0, (COLS * LINES * sizeof(char)) + 1);
+        
         int old_scroll = scroll_position;
-
 
         switch(ch){
             case KEY_F(1):
@@ -189,12 +210,12 @@ int main(){
                 }
                 break;
             case KEY_UP:
-                real_position = handle_arrows(real_position, screen_buffer, 1);
                 scroll_position = handle_scroll(scroll_position, position, true);
+                real_position = handle_arrows(real_position, screen_buffer, 1);
                 break;
             case KEY_DOWN:
+                scroll_position = handle_scroll(scroll_position, position, false);    
                 real_position = handle_arrows(real_position, screen_buffer, 3);
-                scroll_position = handle_scroll(scroll_position, position, false);
                 break;
             case KEY_LEFT:
                 real_position = handle_arrows(real_position, screen_buffer, 0);
@@ -209,16 +230,17 @@ int main(){
         }
 
         position = real_to_screen(screen_buffer, real_position);
-        if (old_scroll != scroll_position) position[1] = (LINES) * scroll_position;
+        if (old_scroll > scroll_position) position[1] = (LINES) * scroll_position;
         real_position = screen_to_real(screen_buffer, position);
-        werase(pad);
-        mvwprintw(pad, 0, 0, "%s", screen_buffer);
+        get_display(display_buffer, screen_buffer, scroll_position);
+        clear();
+        mvprintw(0, 0, "%s", display_buffer);
         move(position[1], position[0]);
-        prefresh(pad, scroll_position, 0, 0, 0, LINES - 1, COLS - 1);
+        refresh();
     }
     
 cleanup:
-    delwin(pad);
+    free(display_buffer);
     free(screen_buffer);
     free(position);
     endwin();
