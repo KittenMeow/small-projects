@@ -39,6 +39,7 @@ void insert(char* buffer, char to_insert, int index){
 }
 
 int screen_to_real(char* screen, int position[2], int scroll_position){
+    position = fix_cursor(position);
     int row = 0;
     int col = 0;
 
@@ -88,13 +89,14 @@ int allow_vertical_arrow_helper(char* screen, int next_position[2], int cur_posi
     last_newline = strrchr(strrchr_tmp, '\n');
     end_of_line = strchr(screen + cur_position, '\n');
 
-    if (last_newline == NULL) last_newline = screen;
+    if (last_newline == NULL) last_index = 0;
+    else last_index = (int)(last_newline - strrchr_tmp);
+
     if (end_of_line == NULL) next_newline = screen + strlen(screen);
     else {
         next_newline = strchr(end_of_line + 1, '\n');
     }
     if (next_newline == NULL) next_newline = screen + strlen(screen);
-    last_index = (int)(last_newline - strrchr_tmp);
     next_index_nl = (int)(next_newline - screen);
 
     int next_index = screen_to_real(screen, next_position, scroll_position);
@@ -155,7 +157,7 @@ int handle_scroll(int scroll_position, int position[2], bool up){
         if ((position[1]) < scroll_position) return --scroll_position;
     }
     else {
-        if ((position[1]) > (LINES - 1)) return ++scroll_position;
+        if (position[1] >= (LINES - 1)) return ++scroll_position;
     }
 
     return scroll_position;
@@ -179,6 +181,18 @@ void get_display(char* display, char* screen, int scroll_position){
     int end_index = strlen(screen);
 
     display = substring(screen, start_index, end_index - start_index, display);
+}
+
+void handle_backspace(char* screen, int real_position){
+    char* updated = malloc(FILE_LIMIT * sizeof(char));
+
+    strncpy(updated, screen, real_position - 1);
+    strcpy(updated + real_position - 1, screen + real_position);
+
+    memset(screen, 0, FILE_LIMIT * sizeof(char));
+
+    strcpy(screen, updated);
+    free(updated);
 }
 
 int main(){
@@ -213,9 +227,9 @@ int main(){
                 break;
             case KEY_BACKSPACE:
                 if (position[0] > 0){
+                    handle_backspace(screen_buffer, real_position);
                     real_position--;
                     position[0]--;
-                    screen_buffer[real_position] = '\0';
                 }
                 break;
             case KEY_UP:
@@ -234,9 +248,9 @@ int main(){
                 break;
             default:
                 if (ch == '\n'){
+                    scroll_position = handle_scroll(scroll_position, position, false);
                     position[0] = 0;
                     position[1]++;
-                    scroll_position = handle_scroll(scroll_position, position, false);
                 } else {
                     position[0]++;
                 }
@@ -244,8 +258,7 @@ int main(){
                 real_position++;
 
         }
-
-        if (old_scroll > scroll_position) position[1] = (LINES) * scroll_position;
+        
         position = fix_cursor(position);
         get_display(display_buffer, screen_buffer, scroll_position);
         clear();
@@ -253,11 +266,6 @@ int main(){
         move(position[1], position[0]);
         refresh();
     }
-
-    // When real_position is incremented, it goes beyond position[1]
-    // We ensure that position[1] never goes out of bounds
-    // However, when real_position is decremented again, position[1] stays the same..
-    // ...until it's back inbounds, at which point real_position is ahead of it
     
 cleanup:
     free(display_buffer);
