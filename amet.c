@@ -7,6 +7,7 @@
 
 #define FILE_LIMIT 4096
 #define LINE_LIMIT 1000
+#define FILENAME_LIMIT 255
 
 int* fix_cursor(int position[2]){
     if (position[0] >= COLS){
@@ -249,9 +250,51 @@ void handle_backspace(char* screen, int real_position){
     free(updated);
 }
 
-// TODO: Saving!
+int handle_save(char* buffer, char* filename){
+    FILE *fptr;
 
-int main(){
+    fptr = fopen(filename, "w");
+
+    fprintf(fptr, "%s", buffer);
+    
+    fclose(fptr);
+
+    return 0;
+}
+
+char* handle_load(char* filename){
+    FILE *fptr;
+
+    fptr = fopen(filename, "r");
+
+    char *buf = malloc(sizeof(char) * (FILE_LIMIT + 1));
+
+    if (fptr != NULL){
+        size_t new_len = fread(buf, sizeof(char), FILE_LIMIT, fptr);
+        if (ferror(fptr) != 0){
+            fputs("Error reading file!", stderr);
+            return malloc(FILE_LIMIT * sizeof(char));
+        } else {
+            buf[new_len++] = '\0';
+        }
+
+        fclose(fptr);
+    } else {
+        return malloc(FILE_LIMIT * sizeof(char));
+    }
+
+    return buf;
+}
+
+// TODO: Scrolls up too early
+// Swaying on an opened file leads to segfault
+
+int main(int argc, char *argv[]){
+    if (argc != 2){
+        printf("Please provide a filename!");
+        return 1;
+    }
+
     initscr();
     cbreak();
     noecho();
@@ -271,6 +314,11 @@ int main(){
     char* screen_buffer = malloc(FILE_LIMIT * sizeof(char));
     char* display_buffer = malloc((COLS * LINES * sizeof(char)) + 1);
 
+    screen_buffer = handle_load(argv[1]);
+    if (strlen(screen_buffer) > 0){
+        goto display;
+    }
+
     while (true){
         int ch = getch();
 
@@ -282,11 +330,16 @@ int main(){
             case KEY_F(1):
                 goto cleanup;
                 break;
+            case KEY_F(2):
+                handle_save(screen_buffer, argv[1]);
+                break;
             case KEY_BACKSPACE:
-                if (position[0] > 0){
+            case 127:
+            case '\b':
+                if (real_position > 0){
                     handle_backspace(screen_buffer, real_position);
                     real_position--;
-                    position[0]--;
+                    position = real_to_screen(screen_buffer, real_position, sway_position, scroll_position);
                 }
                 break;
             case KEY_UP:
@@ -321,6 +374,7 @@ int main(){
         }
 
         position = fix_cursor(position);
+    display:
         get_display(display_buffer, screen_buffer, scroll_position, sway_position);
         clear();
         mvprintw(0, 0, "%s", display_buffer);
